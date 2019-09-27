@@ -18,7 +18,7 @@ class SecurityMiddleware(MiddlewareMixin):
         self.redirect_exempt = [re.compile(r) for r in settings.SECURE_REDIRECT_EXEMPT]
         self.referrer_policy = settings.SECURE_REFERRER_POLICY
 
-    def process_request(self, request):
+    async def process_request(self, request):
         path = request.path.lstrip("/")
         if (self.redirect and not request.is_secure() and
                 not any(pattern.search(path)
@@ -28,7 +28,7 @@ class SecurityMiddleware(MiddlewareMixin):
                 "https://%s%s" % (host, request.get_full_path())
             )
 
-    def process_response(self, request, response):
+    async def process_response(self, request, response):
         if (self.sts_seconds and request.is_secure() and
                 'Strict-Transport-Security' not in response):
             sts_header = "max-age=%s" % self.sts_seconds
