@@ -1,3 +1,4 @@
+from asgiref.sync import sync_to_async
 import time
 from importlib import import_module
 
@@ -15,11 +16,11 @@ class SessionMiddleware(MiddlewareMixin):
         engine = import_module(settings.SESSION_ENGINE)
         self.SessionStore = engine.SessionStore
 
-    def process_request(self, request):
+    async def process_request(self, request):
         session_key = request.COOKIES.get(settings.SESSION_COOKIE_NAME)
         request.session = self.SessionStore(session_key)
 
-    def process_response(self, request, response):
+    async def process_response(self, request, response):
         """
         If request.session was modified, or if the configuration is to save the
         session every time, save the changes and set a session cookie or delete
@@ -55,7 +56,7 @@ class SessionMiddleware(MiddlewareMixin):
                 # Skip session save for 500 responses, refs #3881.
                 if response.status_code != 500:
                     try:
-                        request.session.save()
+                        await sync_to_async(request.session.save)()
                     except UpdateError:
                         raise SuspiciousOperation(
                             "The request's session was deleted before the "
