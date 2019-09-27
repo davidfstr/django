@@ -31,7 +31,7 @@ class CommonMiddleware(MiddlewareMixin):
 
     response_redirect_class = HttpResponsePermanentRedirect
 
-    def process_request(self, request):
+    async def process_request(self, request):
         """
         Check for denied User-Agents and rewrite the URL based on
         settings.APPEND_SLASH and settings.PREPEND_WWW
@@ -96,7 +96,7 @@ class CommonMiddleware(MiddlewareMixin):
             )
         return new_path
 
-    def process_response(self, request, response):
+    async def process_response(self, request, response):
         """
         When the status code of the response is 404, it may redirect to a path
         with an appended slash if should_redirect_with_slash() returns True.
