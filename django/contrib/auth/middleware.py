@@ -14,7 +14,7 @@ def get_user(request):
 
 
 class AuthenticationMiddleware(MiddlewareMixin):
-    def process_request(self, request):
+    async def process_request(self, request):
         assert hasattr(request, 'session'), (
             "The Django authentication middleware requires session middleware "
             "to be installed. Edit your MIDDLEWARE%s setting to insert "
