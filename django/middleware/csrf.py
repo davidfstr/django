@@ -4,6 +4,8 @@ Cross Site Request Forgery Middleware.
 This module provides a middleware that implements protection
 against request forgeries from other sites.
 """
+from asgiref.sync import sync_to_async
+import asyncio
 import logging
 import re
 import string
@@ -128,6 +130,9 @@ def _compare_salted_tokens(request_csrf_token, csrf_token):
     )
 
 
+# TODO: Consider supporting third-party session backends
+#       that expose an async interface. No built-in session backends
+#       in Django currently require an async interface.
 class CsrfViewMiddleware(MiddlewareMixin):
     """
     Require a present and correct csrfmiddlewaretoken for POST requests that
@@ -145,8 +150,11 @@ class CsrfViewMiddleware(MiddlewareMixin):
         request.csrf_processing_done = True
         return None
 
-    def _reject(self, request, reason):
-        response = _get_failure_view()(request, reason=reason)
+    async def _reject(self, request, reason):
+        failure_view = _get_failure_view()
+        if not asyncio.iscoroutinefunction(failure_view):
+            failure_view = sync_to_async(failure_view)
+        response = await failure_view(request, reason=reason)
         log_response(
             'Forbidden (%s): %s', reason, request.path,
             response=response,
@@ -196,13 +204,13 @@ class CsrfViewMiddleware(MiddlewareMixin):
             # Set the Vary header since content varies with the CSRF cookie.
             patch_vary_headers(response, ('Cookie',))
 
-    def process_request(self, request):
+    async def process_request(self, request):
         csrf_token = self._get_token(request)
         if csrf_token is not None:
             # Use same token next time.
             request.META['CSRF_COOKIE'] = csrf_token
 
-    def process_view(self, request, callback, callback_args, callback_kwargs):
+    async def process_view(self, request, callback, callback_args, callback_kwargs):
         if getattr(request, 'csrf_processing_done', False):
             return None
 
@@ -239,17 +247,17 @@ class CsrfViewMiddleware(MiddlewareMixin):
                 # we can use strict Referer checking.
                 referer = request.META.get('HTTP_REFERER')
                 if referer is None:
-                    return self._reject(request, REASON_NO_REFERER)
+                    return await self._reject(request, REASON_NO_REFERER)
 
                 referer = urlparse(referer)
 
                 # Make sure we have a valid URL for Referer.
                 if '' in (referer.scheme, referer.netloc):
-                    return self._reject(request, REASON_MALFORMED_REFERER)
+                    return await self._reject(request, REASON_MALFORMED_REFERER)
 
                 # Ensure that our Referer is also secure.
                 if referer.scheme != 'https':
-                    return self._reject(request, REASON_INSECURE_REFERER)
+                    return await self._reject(request, REASON_INSECURE_REFERER)
 
                 # If there isn't a CSRF_COOKIE_DOMAIN, require an exact match
                 # match on host:port. If not, obey the cookie rules (or those
@@ -278,14 +286,14 @@ class CsrfViewMiddleware(MiddlewareMixin):
 
                 if not any(is_same_domain(referer.netloc, host) for host in good_hosts):
                     reason = REASON_BAD_REFERER % referer.geturl()
-                    return self._reject(request, reason)
+                    return await self._reject(request, reason)
 
             csrf_token = request.META.get('CSRF_COOKIE')
             if csrf_token is None:
                 # No CSRF cookie. For POST requests, we insist on a CSRF cookie,
                 # and in this way we can avoid all CSRF attacks, including login
                 # CSRF.
-                return self._reject(request, REASON_NO_CSRF_COOKIE)
+                return await self._reject(request, REASON_NO_CSRF_COOKIE)
 
             # Check non-cookie token for match.
             request_csrf_token = ""
@@ -311,7 +319,7 @@ class CsrfViewMiddleware(MiddlewareMixin):
 
         return self._accept(request)
 
-    def process_response(self, request, response):
+    async def process_response(self, request, response):
         if not getattr(request, 'csrf_cookie_needs_reset', False):
             if getattr(response, 'csrf_cookie_set', False):
                 return response
