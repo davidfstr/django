@@ -31,7 +31,12 @@ def convert_exception_to_response(get_response):
     no middleware leaks an exception and that the next middleware in the stack
     can rely on getting a response instead of an exception.
     """
-    if asyncio.iscoroutinefunction(get_response):
+    # TODO: Eliminate the need to check for _is_async by eliminating the use of
+    #       @async_middleware. Then we can just check whether get_response.__call__
+    #       is a coroutine for class-based middleware.
+    is_async = (getattr(get_response, '_is_async', False) or
+                asyncio.iscoroutinefunction(get_response))
+    if is_async:
         @wraps(get_response)
         async def inner(request):
             try:
