@@ -1,5 +1,7 @@
 "Functions that help with dynamically creating decorators for views."
 
+from asgiref.sync import async_to_sync
+import asyncio
 from functools import partial, update_wrapper, wraps
 
 
@@ -112,6 +114,12 @@ def decorator_from_middleware(middleware_class):
 
 
 def make_middleware_decorator(middleware_class):
+    def make_sync(func):
+        if asyncio.iscoroutinefunction(func):
+            return async_to_sync(func)
+        else:
+            return func
+    
     def _make_decorator(*m_args, **m_kwargs):
         middleware = middleware_class(*m_args, **m_kwargs)
 
@@ -119,33 +127,33 @@ def make_middleware_decorator(middleware_class):
             @wraps(view_func)
             def _wrapped_view(request, *args, **kwargs):
                 if hasattr(middleware, 'process_request'):
-                    result = middleware.process_request(request)
+                    result = make_sync(middleware.process_request)(request)
                     if result is not None:
                         return result
                 if hasattr(middleware, 'process_view'):
-                    result = middleware.process_view(request, view_func, args, kwargs)
+                    result = make_sync(middleware.process_view)(request, view_func, args, kwargs)
                     if result is not None:
                         return result
                 try:
                     response = view_func(request, *args, **kwargs)
                 except Exception as e:
                     if hasattr(middleware, 'process_exception'):
-                        result = middleware.process_exception(request, e)
+                        result = make_sync(middleware.process_exception)(request, e)
                         if result is not None:
                             return result
                     raise
                 if hasattr(response, 'render') and callable(response.render):
                     if hasattr(middleware, 'process_template_response'):
-                        response = middleware.process_template_response(request, response)
+                        response = make_sync(middleware.process_template_response)(request, response)
                     # Defer running of process_response until after the template
                     # has been rendered:
                     if hasattr(middleware, 'process_response'):
                         def callback(response):
-                            return middleware.process_response(request, response)
+                            return make_sync(middleware.process_response)(request, response)
                         response.add_post_render_callback(callback)
                 else:
                     if hasattr(middleware, 'process_response'):
-                        return middleware.process_response(request, response)
+                        return make_sync(middleware.process_response)(request, response)
                 return response
             return _wrapped_view
         return _decorator
